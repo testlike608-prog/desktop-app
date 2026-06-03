@@ -1,0 +1,94 @@
+name: Build Flutter + Python Windows App
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Windows Desktop App
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ─── Python Backend ───────────────────────────────────────────
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: pip-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: pip-
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install nuitka ordered-set zstandard
+
+      - name: Cache Nuitka build cache
+        uses: actions/cache@v4
+        with:
+          path: ~\.nuitka
+          key: nuitka-${{ hashFiles('backend/**/*.py') }}
+          restore-keys: nuitka-
+
+      - name: Build Python Backend with Nuitka
+        run: |
+          cd backend
+          python -m nuitka `
+            --onedir `
+            --windows-console-mode=disable `
+            --include-data-dir=. =data `
+            --include-package=fastapi `
+            --include-package=uvicorn `
+            --include-package=pydantic `
+            --include-package=cv2 `
+            --include-package=PySide6 `
+            --include-package=zxingcpp `
+            --output-dir=..\dist_backend `
+            api_server.py
+        shell: pwsh
+
+      # ─── Flutter Frontend ─────────────────────────────────────────
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Build Flutter Windows Release
+        run: flutter build windows --release
+
+      # ─── Combine & Package ────────────────────────────────────────
+      - name: Copy Python backend into Flutter release
+        run: |
+          $src  = "dist_backend\api_server.dist"
+          $dest = "build\windows\x64\runner\Release"
+          Copy-Item -Path "$src\*" -Destination $dest -Recurse -Force
+        shell: pwsh
+
+      - name: Copy backend data files (config, xlsx, ico)
+        run: |
+          $dest = "build\windows\x64\runner\Release"
+          Copy-Item "backend\config.json"           -Destination $dest -Force -ErrorAction SilentlyContinue
+          Copy-Item "backend\program_mapping.xlsx"  -Destination $dest -Force -ErrorAction SilentlyContinue
+          Copy-Item "backend\meeserve.ico"          -Destination $dest -Force -ErrorAction SilentlyContinue
+          Copy-Item "backend\company_logo.png"      -Destination $dest -Force -ErrorAction SilentlyContinue
+        shell: pwsh
+
+      # ─── Upload Artifact ──────────────────────────────────────────
+      - name: Upload Windows App
+        uses: actions/upload-artifact@v4
+        with:
+          name: WaterDrop-Windows-App
+          path: build\windows\x64\runner\Release\
+          retention-days: 30
