@@ -27,33 +27,36 @@ jobs:
           key: pip-${{ hashFiles('backend/requirements.txt') }}
           restore-keys: pip-
 
-      - name: Install Python dependencies
+      - name: Install Python dependencies + PyInstaller
         run: |
           pip install -r backend/requirements.txt
-          pip install nuitka ordered-set zstandard
+          pip install pyinstaller
 
-      - name: Cache Nuitka build cache
-        uses: actions/cache@v4
-        with:
-          path: ~\.nuitka
-          key: nuitka-${{ hashFiles('backend/**/*.py') }}
-          restore-keys: nuitka-
-
-      - name: Build Python Backend with Nuitka
+      - name: Build api_server.exe with PyInstaller
         run: |
-          cd backend
-          python -m nuitka `
-            --onedir `
-            --windows-console-mode=disable `
-            --include-data-dir=. =data `
-            --include-package=fastapi `
-            --include-package=uvicorn `
-            --include-package=pydantic `
-            --include-package=cv2 `
-            --include-package=PySide6 `
-            --include-package=zxingcpp `
-            --output-dir=..\dist_backend `
-            api_server.py
+          pyinstaller `
+            --onefile `
+            --noconsole `
+            --name api_server `
+            --paths backend `
+            --hidden-import=uvicorn.logging `
+            --hidden-import=uvicorn.loops `
+            --hidden-import=uvicorn.loops.auto `
+            --hidden-import=uvicorn.protocols `
+            --hidden-import=uvicorn.protocols.http `
+            --hidden-import=uvicorn.protocols.http.auto `
+            --hidden-import=uvicorn.protocols.websockets `
+            --hidden-import=uvicorn.protocols.websockets.auto `
+            --hidden-import=uvicorn.lifespan `
+            --hidden-import=uvicorn.lifespan.on `
+            --hidden-import=uvicorn.lifespan.off `
+            --hidden-import=anyio `
+            --hidden-import=anyio._backends._asyncio `
+            --hidden-import=websockets `
+            --hidden-import=fastapi `
+            --hidden-import=cv2 `
+            --add-data "backend/config.json;." `
+            backend/api_server.py
         shell: pwsh
 
       # ─── Flutter Frontend ─────────────────────────────────────────
@@ -69,20 +72,19 @@ jobs:
         run: flutter build windows --release
 
       # ─── Combine & Package ────────────────────────────────────────
-      - name: Copy Python backend into Flutter release
+      - name: Copy api_server.exe into Flutter release
         run: |
-          $src  = "dist_backend\api_server.dist"
           $dest = "build\windows\x64\runner\Release"
-          Copy-Item -Path "$src\*" -Destination $dest -Recurse -Force
+          Copy-Item "dist\api_server.exe" -Destination $dest -Force
         shell: pwsh
 
-      - name: Copy backend data files (config, xlsx, ico)
+      - name: Copy backend data files
         run: |
           $dest = "build\windows\x64\runner\Release"
-          Copy-Item "backend\config.json"           -Destination $dest -Force -ErrorAction SilentlyContinue
-          Copy-Item "backend\program_mapping.xlsx"  -Destination $dest -Force -ErrorAction SilentlyContinue
-          Copy-Item "backend\meeserve.ico"          -Destination $dest -Force -ErrorAction SilentlyContinue
-          Copy-Item "backend\company_logo.png"      -Destination $dest -Force -ErrorAction SilentlyContinue
+          Copy-Item "backend\config.json"          -Destination $dest -Force -ErrorAction SilentlyContinue
+          Copy-Item "backend\program_mapping.xlsx" -Destination $dest -Force -ErrorAction SilentlyContinue
+          Copy-Item "backend\meeserve.ico"         -Destination $dest -Force -ErrorAction SilentlyContinue
+          Copy-Item "backend\company_logo.png"     -Destination $dest -Force -ErrorAction SilentlyContinue
         shell: pwsh
 
       # ─── Upload Artifact ──────────────────────────────────────────
